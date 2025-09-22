@@ -12,12 +12,12 @@ export class SignalStrengthWeb extends WebPlugin implements SignalStrengthPlugin
 
   async setNetworkType({ networkType }: { networkType: NetworkType }): Promise<void> {
     this.selectedNetworkType = networkType;
-    console.log(`Network type set to ${networkType}`);
+    // console.log(`Network type set to ${networkType}`);
   }
 
   async setSimCount({ simCount }: { simCount: number }): Promise<void> {
     this.simCount = simCount;
-    console.log(`Sim count set to ${simCount}`);
+    // console.log(`Sim count set to ${simCount}`);
   }
 
   private intervalId: NodeJS.Timeout | null = null;
@@ -41,11 +41,11 @@ export class SignalStrengthWeb extends WebPlugin implements SignalStrengthPlugin
         networkType = NetworkType.UNKNOWN;
     }
     this.setNetworkType({ networkType });
-    console.log('openNetworkSettings');
+    // console.log('openNetworkSettings');
   }
 
   async openWifiSettings(): Promise<void> {
-    console.log('openWifiSettings');
+    // console.log('openWifiSettings');
   }
 
   async isMultiSim(): Promise<{ isMultiSim: boolean }> {
@@ -57,17 +57,17 @@ export class SignalStrengthWeb extends WebPlugin implements SignalStrengthPlugin
   }
 
   async makeCall({ number }: { number: string }): Promise<void> {
-    console.log('makeCall', number);
+    // console.log('makeCall', number);
     this.isOnCall = true;
   }
 
   async disconnectCall(): Promise<void> {
-    console.log('disconnectCall');
+    // console.log('disconnectCall');
     this.isOnCall = false;
   }
 
   async startMonitoring({ technology }: { technology: NetworkType }): Promise<void> {
-    console.log('start Monitoring....');
+    // console.log('start Monitoring....');
     this.selectedNetworkType = technology;
     if (this.intervalId !== null) {
       console.warn('Monitoring is already running');
@@ -75,22 +75,22 @@ export class SignalStrengthWeb extends WebPlugin implements SignalStrengthPlugin
     }
 
     this.intervalId = setInterval(() => {
-      console.log('Monitoring signal strength ....');
+      // console.log('Monitoring signal strength ....');
       
       const signalStrength = this.generateRandomSignalStrength();
       this.notifyListeners('signalUpdate', signalStrength);
     }, 1000);
-    console.log('Started monitoring');
+    // console.log('Started monitoring');
     
   }
 
   async removeAllListeners(): Promise<void> {
-    console.log('removeAllListeners');
+    // console.log('removeAllListeners');
     super.removeAllListeners();
   }
 
   async addListener(eventName: string, listenerFunc: (data: any) => void): Promise<PluginListenerHandle> {
-    console.log('addListener', eventName);
+    // console.log('addListener', eventName);
     return super.addListener(eventName, listenerFunc);
   }
 
@@ -98,13 +98,13 @@ export class SignalStrengthWeb extends WebPlugin implements SignalStrengthPlugin
     if (this.intervalId !== null) {
       clearInterval(this.intervalId);
       this.intervalId = null;
-      console.log('Stopped monitoring');
+      // console.log('Stopped monitoring');
     }
   }
 
   async setDataConnectionType({ dataConnectionType }: { dataConnectionType: DataConnectionType }): Promise<void> {
     this.dataConnectionType = dataConnectionType;
-    console.log('setDataConnectionType', dataConnectionType);
+    // console.log('setDataConnectionType', dataConnectionType);
   }
 
   private generateRandomSignalStrength(): SignalStrengthResult {
