@@ -56,8 +56,8 @@ export class SignalStrengthWeb extends WebPlugin implements SignalStrengthPlugin
     return { activeSimCount: 1 };
   }
 
-  async makeCall({ number }: { number: string }): Promise<void> {
-    // console.log('makeCall', number);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async makeCall(_options: { number: string }): Promise<void> {
     this.isOnCall = true;
   }
 
