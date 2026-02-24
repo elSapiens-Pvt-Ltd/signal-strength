@@ -19,6 +19,7 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.telecom.TelecomManager;
 import android.telephony.*;
+import android.telephony.TelephonyDisplayInfo;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -69,6 +70,7 @@ public class SignalStrengthPlugin extends Plugin {
     private boolean isNetworkSpeedMonitoring = false;
     private static final String TAG = "SignalStrength";
     private MyTelephonyCallback telephonyCallback;
+    private int overrideNetworkType = TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE;
     @Override
     protected void handleOnStart() {
         super.handleOnStart();
@@ -178,6 +180,11 @@ public class SignalStrengthPlugin extends Plugin {
                     new NrCellProcessor().processCell(cellInfo, NrCellInfo, currentCellData, this.telephonyManager, neighboringCells);
                 }
             }
+            // Samsung devices may not report CellInfoNr for NSA - use display info override
+            if (!isNsaNR && isNsaFromOverride() && currentCellData.has("type")) {
+                currentCellData.put("type", "NR NSA");
+                currentCellData.put("technology", "5G");
+            }
             JSObject result = new JSObject();
             if (
                     !(requestedTechnology.equals("ALL")
@@ -196,7 +203,12 @@ public class SignalStrengthPlugin extends Plugin {
           if (ActivityCompat.checkSelfPermission(this.getContext(), Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
             notifyListeners("signalUpdate", result);
           }
-          result.put("networkTypeName", getNetworkTypeName(telephonyManager.getDataNetworkType()));
+          int dataNetworkType = telephonyManager.getDataNetworkType();
+          if (dataNetworkType == TelephonyManager.NETWORK_TYPE_LTE && isNsaFromOverride()) {
+              result.put("networkTypeName", "5G NR NSA");
+          } else {
+              result.put("networkTypeName", getNetworkTypeName(dataNetworkType));
+          }
             notifyListeners("signalUpdate", result);
         }
     }
@@ -219,10 +231,16 @@ public class SignalStrengthPlugin extends Plugin {
         }
     }
 
-    private class MyTelephonyCallback extends TelephonyCallback implements TelephonyCallback.CellInfoListener {
+    private class MyTelephonyCallback extends TelephonyCallback
+            implements TelephonyCallback.CellInfoListener, TelephonyCallback.DisplayInfoListener {
         @Override
         public void onCellInfoChanged(@NonNull List<CellInfo> cellInfoList) {
             handleCellInfoChanged(cellInfoList);
+        }
+
+        @Override
+        public void onDisplayInfoChanged(@NonNull TelephonyDisplayInfo telephonyDisplayInfo) {
+            overrideNetworkType = telephonyDisplayInfo.getOverrideNetworkType();
         }
     }
     private boolean isMissingRequiredPermissions(Context context) {
@@ -236,12 +254,22 @@ public class SignalStrengthPlugin extends Plugin {
         }
     }
 
+    private boolean isNsaFromOverride() {
+        return overrideNetworkType == TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA
+            || overrideNetworkType == TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA_MMWAVE
+            || overrideNetworkType == TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED;
+    }
+
     private String getNetworkType() {
       if (ActivityCompat.checkSelfPermission(this.getContext(), Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
         return "Permission Denied";
       }
       int networkType = telephonyManager.getDataNetworkType();
-        return getNetworkTypeString(networkType);
+      // Detect 5G NSA: data network reports LTE but display info indicates NR
+      if (networkType == TelephonyManager.NETWORK_TYPE_LTE && isNsaFromOverride()) {
+          return "5G";
+      }
+      return getNetworkTypeString(networkType);
     }
 
     private String getNetworkTypeString(int networkType) {
