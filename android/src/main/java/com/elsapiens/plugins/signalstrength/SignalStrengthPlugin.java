@@ -214,6 +214,9 @@ public class SignalStrengthPlugin extends Plugin {
     }
 
     private boolean checkIfNsaNR(List<CellInfo> cellInfoList) {
+        // Display info must confirm NR NSA - without this, NR cells from background
+        // scanning cause false 5G detection even when the user has switched to 4G only
+        if (!isNsaFromOverride()) return false;
         boolean hasLTE = cellInfoList.stream().anyMatch(cellInfo -> cellInfo instanceof CellInfoLte);
         boolean hasNR = cellInfoList.stream().anyMatch(cellInfo -> cellInfo instanceof CellInfoNr);
         return hasLTE && hasNR;
