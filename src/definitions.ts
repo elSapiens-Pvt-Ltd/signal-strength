@@ -39,6 +39,20 @@ export interface SignalStrengthResult {
   };
   currentCell?: CurrentCellInfo;
   neighboringCells?: NeighborCellInfo[];
+  debug?: {
+    dataNetworkTypeRaw: number;
+    dataNetworkTypeName: string;
+    overrideNetworkType: number;
+    overrideName: string;
+    isNsaFromOverride: boolean;
+    isNsaNR: boolean;
+    cellTechnology: string;
+    cellType: string;
+    getNetworkType: string;
+    statusBarIcon: string;
+    cellInfoCount: number;
+    cellInfoTypes: string;
+  };
 }
 
 /**

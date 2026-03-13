@@ -71,6 +71,7 @@ public class SignalStrengthPlugin extends Plugin {
     private static final String TAG = "SignalStrength";
     private MyTelephonyCallback telephonyCallback;
     private int overrideNetworkType = TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE;
+    private DisplayInfoCallback displayInfoCallback;
     @Override
     protected void handleOnStart() {
         super.handleOnStart();
@@ -131,18 +132,58 @@ public class SignalStrengthPlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * Lightweight callback used solely to refresh overrideNetworkType on demand.
+     * Re-registering forces TelephonyRegistry to deliver the current TelephonyDisplayInfo
+     * immediately — workaround for Samsung devices that don't fire onDisplayInfoChanged
+     * when transitioning away from 5G NSA.
+     */
+    private class DisplayInfoCallback extends TelephonyCallback
+            implements TelephonyCallback.DisplayInfoListener {
+        @Override
+        public void onDisplayInfoChanged(@NonNull TelephonyDisplayInfo telephonyDisplayInfo) {
+            overrideNetworkType = telephonyDisplayInfo.getOverrideNetworkType();
+        }
+    }
+
+    /**
+     * Refresh overrideNetworkType by re-registering the display info callback,
+     * then request cell info. Both callbacks execute on the main thread in order,
+     * ensuring the override is fresh before cell data is processed.
+     */
+    private void refreshAndPollCellInfo() {
+        Context context = getContext();
+        if (context == null || telephonyManager == null) return;
+        if (ActivityCompat.checkSelfPermission(context,
+                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+
+        // Step 1: Re-register to get fresh override value
+        if (displayInfoCallback != null) {
+            telephonyManager.unregisterTelephonyCallback(displayInfoCallback);
+        }
+        displayInfoCallback = new DisplayInfoCallback();
+        telephonyManager.registerTelephonyCallback(context.getMainExecutor(), displayInfoCallback);
+
+        // Step 2: Request cell info — callback fires on main thread after display info
+        telephonyManager.requestCellInfoUpdate(context.getMainExecutor(),
+                new TelephonyManager.CellInfoCallback() {
+                    @Override
+                    public void onCellInfo(@NonNull List<CellInfo> cellInfoList) {
+                        handleCellInfoChanged(cellInfoList);
+                    }
+                });
+    }
+
     private class SignalStrengthTask implements Runnable {
         @Override
         public void run() {
-            if (ActivityCompat.checkSelfPermission(getContext(),
-                    Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                telephonyManager.requestCellInfoUpdate(getContext().getMainExecutor(),
-                        new TelephonyManager.CellInfoCallback() {
-                            @Override
-                            public void onCellInfo(@NonNull List<CellInfo> cellInfoList) {
-                                handleCellInfoChanged(cellInfoList);
-                            }
-                        });
+            Context context = getContext();
+            if (context != null) {
+                // Post to main thread to avoid threading issues —
+                // all telephony callbacks and state reads happen on the same thread.
+                new Handler(Looper.getMainLooper()).post(() -> refreshAndPollCellInfo());
             }
         }
     }
@@ -181,15 +222,17 @@ public class SignalStrengthPlugin extends Plugin {
                 }
             }
             // Samsung devices may not report CellInfoNr for NSA - use display info override
-            if (!isNsaNR && isNsaFromOverride() && currentCellData.has("type")) {
+            // Only apply when dataNetworkType is LTE, since 5G NSA always anchors on LTE
+            int dataNetworkType = telephonyManager.getDataNetworkType();
+            if (!isNsaNR && isNsaFromOverride()
+                && dataNetworkType == TelephonyManager.NETWORK_TYPE_LTE
+                && currentCellData.has("type")) {
                 currentCellData.put("type", "NR NSA");
                 currentCellData.put("technology", "5G");
             }
             JSObject result = new JSObject();
-            if (
-                    !(requestedTechnology.equals("ALL")
-                    && !Objects.equals(requestedTechnology, getNetworkType())
-            )) {
+            if (!requestedTechnology.equals("ALL")
+                    && !Objects.equals(requestedTechnology, getNetworkType())) {
                 result.put("status", "error");
                 result.put("message", "Not connected on the requested network type " + requestedTechnology);
             } else {
@@ -203,12 +246,43 @@ public class SignalStrengthPlugin extends Plugin {
           if (ActivityCompat.checkSelfPermission(this.getContext(), Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
             notifyListeners("signalUpdate", result);
           }
-          int dataNetworkType = telephonyManager.getDataNetworkType();
           if (dataNetworkType == TelephonyManager.NETWORK_TYPE_LTE && isNsaFromOverride()) {
               result.put("networkTypeName", "5G NR NSA");
           } else {
               result.put("networkTypeName", getNetworkTypeName(dataNetworkType));
           }
+            // Debug diagnostics — sent to app for remote troubleshooting
+            JSObject debug = new JSObject();
+            debug.put("dataNetworkTypeRaw", dataNetworkType);
+            debug.put("dataNetworkTypeName", getNetworkTypeName(dataNetworkType));
+            debug.put("overrideNetworkType", overrideNetworkType);
+            // Human-readable override name
+            String overrideName = switch (overrideNetworkType) {
+                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE -> "NONE";
+                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_LTE_CA -> "LTE_CA";
+                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_LTE_ADVANCED_PRO -> "LTE_ADV_PRO";
+                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA -> "NR_NSA";
+                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA_MMWAVE -> "NR_NSA_MMWAVE";
+                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED -> "NR_ADVANCED";
+                default -> "UNKNOWN(" + overrideNetworkType + ")";
+            };
+            debug.put("overrideName", overrideName);
+            debug.put("isNsaFromOverride", isNsaFromOverride());
+            debug.put("isNsaNR", isNsaNR);
+            debug.put("cellTechnology", currentCellData.has("technology") ? currentCellData.getString("technology") : "EMPTY");
+            debug.put("cellType", currentCellData.has("type") ? currentCellData.getString("type") : "EMPTY");
+            debug.put("getNetworkType", getNetworkType());
+            debug.put("statusBarIcon", dataNetworkType == TelephonyManager.NETWORK_TYPE_LTE && isNsaFromOverride() ? "5G" : getNetworkTypeString(dataNetworkType));
+            debug.put("cellInfoCount", cellInfoList.size());
+            // List cell types present
+            StringBuilder cellTypes = new StringBuilder();
+            for (CellInfo ci : cellInfoList) {
+                if (cellTypes.length() > 0) cellTypes.append(",");
+                cellTypes.append(ci.getClass().getSimpleName());
+                cellTypes.append(ci.isRegistered() ? "(R)" : "(N)");
+            }
+            debug.put("cellInfoTypes", cellTypes.toString());
+            result.put("debug", debug);
             notifyListeners("signalUpdate", result);
         }
     }
@@ -223,6 +297,10 @@ public class SignalStrengthPlugin extends Plugin {
     }
 
     private void unregisterCellInfoListener() {
+        if (displayInfoCallback != null) {
+            telephonyManager.unregisterTelephonyCallback(displayInfoCallback);
+            displayInfoCallback = null;
+        }
         if (telephonyCallback != null) {
             telephonyManager.unregisterTelephonyCallback(telephonyCallback);
             telephonyCallback = null;
@@ -235,15 +313,10 @@ public class SignalStrengthPlugin extends Plugin {
     }
 
     private class MyTelephonyCallback extends TelephonyCallback
-            implements TelephonyCallback.CellInfoListener, TelephonyCallback.DisplayInfoListener {
+            implements TelephonyCallback.CellInfoListener {
         @Override
         public void onCellInfoChanged(@NonNull List<CellInfo> cellInfoList) {
             handleCellInfoChanged(cellInfoList);
-        }
-
-        @Override
-        public void onDisplayInfoChanged(@NonNull TelephonyDisplayInfo telephonyDisplayInfo) {
-            overrideNetworkType = telephonyDisplayInfo.getOverrideNetworkType();
         }
     }
     private boolean isMissingRequiredPermissions(Context context) {
@@ -258,6 +331,8 @@ public class SignalStrengthPlugin extends Plugin {
     }
 
     private boolean isNsaFromOverride() {
+        // overrideNetworkType is refreshed every poll cycle via refreshDisplayInfo(),
+        // so it always reflects the current system state.
         return overrideNetworkType == TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA
             || overrideNetworkType == TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA_MMWAVE
             || overrideNetworkType == TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED;
