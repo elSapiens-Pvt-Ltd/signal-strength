@@ -243,46 +243,11 @@ public class SignalStrengthPlugin extends Plugin {
             result.put("neighboringCells", neighboringCells);
             result.put("timestamp", currentTime);
             result.put("networkType", getNetworkType());
-          if (ActivityCompat.checkSelfPermission(this.getContext(), Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-            notifyListeners("signalUpdate", result);
-          }
-          if (dataNetworkType == TelephonyManager.NETWORK_TYPE_LTE && isNsaFromOverride()) {
-              result.put("networkTypeName", "5G NR NSA");
-          } else {
-              result.put("networkTypeName", getNetworkTypeName(dataNetworkType));
-          }
-            // Debug diagnostics — sent to app for remote troubleshooting
-            JSObject debug = new JSObject();
-            debug.put("dataNetworkTypeRaw", dataNetworkType);
-            debug.put("dataNetworkTypeName", getNetworkTypeName(dataNetworkType));
-            debug.put("overrideNetworkType", overrideNetworkType);
-            // Human-readable override name
-            String overrideName = switch (overrideNetworkType) {
-                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE -> "NONE";
-                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_LTE_CA -> "LTE_CA";
-                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_LTE_ADVANCED_PRO -> "LTE_ADV_PRO";
-                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA -> "NR_NSA";
-                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA_MMWAVE -> "NR_NSA_MMWAVE";
-                case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED -> "NR_ADVANCED";
-                default -> "UNKNOWN(" + overrideNetworkType + ")";
-            };
-            debug.put("overrideName", overrideName);
-            debug.put("isNsaFromOverride", isNsaFromOverride());
-            debug.put("isNsaNR", isNsaNR);
-            debug.put("cellTechnology", currentCellData.has("technology") ? currentCellData.getString("technology") : "EMPTY");
-            debug.put("cellType", currentCellData.has("type") ? currentCellData.getString("type") : "EMPTY");
-            debug.put("getNetworkType", getNetworkType());
-            debug.put("statusBarIcon", dataNetworkType == TelephonyManager.NETWORK_TYPE_LTE && isNsaFromOverride() ? "5G" : getNetworkTypeString(dataNetworkType));
-            debug.put("cellInfoCount", cellInfoList.size());
-            // List cell types present
-            StringBuilder cellTypes = new StringBuilder();
-            for (CellInfo ci : cellInfoList) {
-                if (cellTypes.length() > 0) cellTypes.append(",");
-                cellTypes.append(ci.getClass().getSimpleName());
-                cellTypes.append(ci.isRegistered() ? "(R)" : "(N)");
+            if (dataNetworkType == TelephonyManager.NETWORK_TYPE_LTE && isNsaFromOverride()) {
+                result.put("networkTypeName", "5G NR NSA");
+            } else {
+                result.put("networkTypeName", getNetworkTypeName(dataNetworkType));
             }
-            debug.put("cellInfoTypes", cellTypes.toString());
-            result.put("debug", debug);
             notifyListeners("signalUpdate", result);
         }
     }
