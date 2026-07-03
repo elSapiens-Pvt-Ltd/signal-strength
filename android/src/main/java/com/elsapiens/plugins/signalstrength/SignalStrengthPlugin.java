@@ -13,6 +13,7 @@ import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
 import android.net.TrafficStats;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -542,17 +543,33 @@ public class SignalStrengthPlugin extends Plugin {
         SubscriptionManager subscriptionManager = (SubscriptionManager) context
                 .getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
 
-        if (subscriptionManager != null) {
-            if (ActivityCompat.checkSelfPermission(getContext(),
-                    Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-                return -1;
-            }
-            List<SubscriptionInfo> activeSubscriptionInfoList = subscriptionManager.getActiveSubscriptionInfoList();
-            if (activeSubscriptionInfoList != null) {
-                return activeSubscriptionInfoList.size(); // Number of active SIMs
+        if (subscriptionManager == null) return 0;
+
+        if (ActivityCompat.checkSelfPermission(getContext(),
+                Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            return -1;
+        }
+
+        // getEnabledSubscriptionInfoList() (API 30) respects the user's SIM
+        // enabled/disabled toggle in Settings. getActiveSubscriptionInfoList()
+        // does NOT — it returns all inserted SIMs regardless of toggle state.
+        // minSdk=31 so this branch always executes; Build check kept for compiler safety.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            List<SubscriptionInfo> enabled = subscriptionManager.getEnabledSubscriptionInfoList();
+            return enabled != null ? enabled.size() : 0;
+        }
+
+        // Unreachable with minSdk=31 — safety fallback only.
+        List<SubscriptionInfo> allSubs = subscriptionManager.getActiveSubscriptionInfoList();
+        if (allSubs == null) return 0;
+        int count = 0;
+        for (SubscriptionInfo info : allSubs) {
+            int slotIndex = info.getSimSlotIndex();
+            if (telephonyManager.getSimState(slotIndex) == TelephonyManager.SIM_STATE_READY) {
+                count++;
             }
         }
-        return 0;
+        return count;
     }
 
     private boolean isOnCall() {
